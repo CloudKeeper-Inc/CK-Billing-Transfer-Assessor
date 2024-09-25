@@ -1,8 +1,8 @@
 import os
 import boto3
 import csv
-import traceback
 from datetime import datetime, timedelta
+import traceback
 
 def get_all_accounts():
     """Retrieve all AWS accounts in the organization."""
@@ -16,9 +16,8 @@ def get_all_accounts():
 
         return accounts
     except Exception as e:
-        print("Error in get_all_accounts:")
+        print(f"Error in get_all_accounts: {e}")
         print(traceback.format_exc())
-        raise
 
 def get_cost_and_usage(start_date, end_date, account_id):
     """Retrieve cost and usage data for a specific account from AWS Cost Explorer."""
@@ -48,9 +47,8 @@ def get_cost_and_usage(start_date, end_date, account_id):
 
         return response
     except Exception as e:
-        print(f"Error in get_cost_and_usage for account {account_id}:")
+        print(f"Error in get_cost_and_usage for account {account_id}: {e}")
         print(traceback.format_exc())
-        raise
 
 def parse_cost_data(response, account_id, account_name):
     """Parse the cost and usage data to get service-wise billing."""
@@ -63,10 +61,12 @@ def parse_cost_data(response, account_id, account_name):
                 amount = group['Metrics']['UnblendedCost']['Amount']
                 results.append([account_id, account_name, time_period['Start'], time_period['End'], service, amount])
         return results
-    except Exception as e:
-        print(f"Error in parse_cost_data for account {account_id}:")
+    except KeyError as e:
+        print(f"KeyError in parse_cost_data for account {account_id}: {e}")
         print(traceback.format_exc())
-        raise
+    except Exception as e:
+        print(f"Unexpected error in parse_cost_data for account {account_id}: {e}")
+        print(traceback.format_exc())
 
 def export_to_csv(data, filename):
     """Export the billing data to a CSV file."""
@@ -78,13 +78,12 @@ def export_to_csv(data, filename):
             writer.writerow(header)
             writer.writerows(data)
 
-        print(f"Data successfully exported to {filename}.")
+        print(f"Info successfully exported to CSV.")
     except Exception as e:
-        print(f"Error in export_to_csv for file {filename}:")
+        print(f"Error exporting to CSV {filename}: {e}")
         print(traceback.format_exc())
-        raise
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     try:
         # Step 1: Get the current date and calculate the first and last day of the previous month
         today = datetime.today()
@@ -94,8 +93,43 @@ if __name__ == "__main__":
         start_date = first_day_last_month.strftime('%Y-%m-%d')
         end_date = last_day_last_month.strftime('%Y-%m-%d')
         print(start_date, end_date)
-        start_date = '2024-09-15'
-        end_date = '2024-09-20'
+
+        # Step 2: Get all accounts in the organization
+        accounts = get_all_accounts()
+
+        # Step 3: Iterate over each account and get billing data
+        for account in accounts:
+            account_id = account['Id']
+            account_name = account['Name']
+            print(f"Fetching billing info for account: {account_name} ({account_id})")
+
+            # Step 4: Get the cost and usage data for the account
+            cost_data = get_cost_and_usage(start_date, end_date, account_id)
+            if cost_data is None:
+                continue  # Skip to next account if cost data retrieval failed
+
+            # Step 5: Parse the data and add to the final result list
+            account_billing_data = parse_cost_data(cost_data, account_id, account_name)
+            if account_billing_data is not None:
+                export_to_csv(account_billing_data, filename=f'{account_id}_bill.csv')
+
+    except Exception as e:
+        print(f"Unexpected error in main: {e}")
+        print(traceback.format_exc())
+
+def get_billing_info(output_directory):
+    try:
+        # Ensure the policy content directory exists
+        if not os.path.exists(output_directory):
+            os.makedirs(output_directory)
+
+        # Step 1: Get the current date and calculate the first and last day of the previous month
+        today = datetime.today()
+        first_day_last_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        last_day_last_month = today.replace(day=1) - timedelta(days=1)
+
+        start_date = first_day_last_month.strftime('%Y-%m-%d')
+        end_date = last_day_last_month.strftime('%Y-%m-%d')
 
         # Step 2: Get all accounts in the organization
         accounts = get_all_accounts()
@@ -108,11 +142,14 @@ if __name__ == "__main__":
 
             # Step 4: Get the cost and usage data for the account
             cost_data = get_cost_and_usage(start_date, end_date, account_id)
+            if cost_data is None:
+                continue  # Skip to next account if cost data retrieval failed
 
-            # Step 5: Parse the data and export to CSV
+            # Step 5: Parse the data and add to the final result list
             account_billing_data = parse_cost_data(cost_data, account_id, account_name)
-            export_to_csv(account_billing_data, filename=f'{account_id}_bill.csv')
+            if account_billing_data is not None:
+                export_to_csv(account_billing_data, filename=f'{output_directory}/{account_id}_bill.csv')
 
     except Exception as e:
-        print("An error occurred in the main program:")
+        print(f"Unexpected error in get_billing_info: {e}")
         print(traceback.format_exc())

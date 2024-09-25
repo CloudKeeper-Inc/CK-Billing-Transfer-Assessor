@@ -43,25 +43,32 @@ def main():
             os.makedirs(output_directory)
 
         # Getting account details
+        print("\n--- Getting Accounts related info ---\n")
         get_account_details(orgClient, output_directory)
 
         # Getting all the org services that are currently enabled
+        print("\n--- Checking if Org Based services are in use ---\n")
         get_org_services(orgClient, output_directory)
 
         # Getting the different policies that are enabled at the org level
+        print("\n--- Checking if any Policies are in use ---\n")
         policyContentDir = f"{output_directory}/policy_content"
         get_policies(orgClient, output_directory, policyContentDir)
 
         # Getting SSO-related info into a separate directory
+        print("\n--- Checking if SSO is enabled ---\n")
         get_sso_info(f'{output_directory}/IdentityCenter')
 
         # Getting billing-related info into a separate directory
+        print("\n--- Checking Billing data if Org services are enabled ---\n")
         get_billing_info(f'{output_directory}/Billing')
 
         # Getting RAM-related info
+        print("\n--- Checking RAM if any org dependent resources are shared ---\n")
         check_for_non_shareable_resources(output_directory)
 
         # Zip all contents and remove folder
+        print("\n--- Creating downloadable zip ---\n")
         zip_folder(folder_path=output_directory, zip_file_path=f'{output_directory}.zip')
 
     except Exception as e:
@@ -71,10 +78,13 @@ def main():
 
 if __name__ == "__main__":
     try:
-        outputDirInput = input("Please enter your organisation's name: ")
+        outputDirInput = input("\n Please enter your organisation's name: ")
         # Output directory, replace spaces with underscores
         output_directory = outputDirInput.replace(' ', '_')
         main()
+
+        current_directory = os.getcwd()
+        print(f"\nPlease download the zip from path : {current_directory}/{output_directory}.zip\n")
     except Exception as e:
         print("An error occurred in the main program:")
         print(traceback.format_exc())
