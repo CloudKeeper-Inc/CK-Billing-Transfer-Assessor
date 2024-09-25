@@ -1,13 +1,12 @@
 import boto3
 from botocore.exceptions import ClientError
 import csv
+import traceback
 
 # Initialize the RAM client
 ram_client = boto3.client('ram')
 
-'''List of AWS resource types that cannot be shared outside the organization
-   This has been obtained from https://docs.aws.amazon.com/ram/latest/userguide/shareable.html'''
-
+# List of AWS resource types that cannot be shared outside the organization
 NON_SHAREABLE_RESOURCE_TYPES = [
     "bedrock:CustomModel",
     "outposts:Outpost",
@@ -30,6 +29,11 @@ def list_ram_resource_shares(resource_owner):
         return response['resourceShares']
     except ClientError as e:
         print(f"Error fetching resource shares: {e}")
+        print(traceback.format_exc())
+        return []
+    except Exception as e:
+        print("Unexpected error in list_ram_resource_shares:")
+        print(traceback.format_exc())
         return []
 
 def list_resources_in_share(resource_share_arn, resource_owner):
@@ -42,57 +46,66 @@ def list_resources_in_share(resource_share_arn, resource_owner):
         return response['resources']
     except ClientError as e:
         print(f"Error fetching resources for resource share {resource_share_arn}: {e}")
+        print(traceback.format_exc())
+        return []
+    except Exception as e:
+        print("Unexpected error in list_resources_in_share:")
+        print(traceback.format_exc())
         return []
 
 def check_for_non_shareable_resources(output_directory):
     """Check if any resource shares with resource owner as SELF/OTHER-ACCOUNTS include resources that are in the NON_SHAREABLE_RESOURCE_TYPES list."""
-    resource_shares_self = list_ram_resource_shares(resource_owner='SELF')
-    resource_shares_other_accounts = list_ram_resource_shares(resource_owner='OTHER-ACCOUNTS')
+    try:
+        resource_shares_self = list_ram_resource_shares(resource_owner='SELF')
+        resource_shares_other_accounts = list_ram_resource_shares(resource_owner='OTHER-ACCOUNTS')
 
-    if not resource_shares_self and not resource_shares_other_accounts:
-        print("No active resource shares found !")
-        return
-    
-    """Exporting data to CSV as resource share is found"""
-    header = ['Resource Type', 'Resource ARN', 'ORG Dependency']
-    with open(f'{output_directory}/RAM.csv', mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.writer(file)
-        writer.writerow(header)
+        # if not resource_shares_self and not resource_shares_other_accounts:
+        #     print("No active resource shares found!")
+        #     return
+        if resource_shares_self or resource_shares_other_accounts:
+        # Exporting data to CSV as resource share is found
+            print("Resource Shares found")
+            header = ['Resource Type', 'Resource ARN', 'ORG Dependency']
+            with open(f'{output_directory}/RAM.csv', mode='w', newline='', encoding='utf-8') as file:
+                writer = csv.writer(file)
+                writer.writerow(header)
 
-        for share in resource_shares_self:
-            resource_share_arn = share['resourceShareArn']
-            resources = list_resources_in_share(resource_share_arn, resource_owner='SELF')
+                for share in resource_shares_self:
+                    resource_share_arn = share['resourceShareArn']
+                    resources = list_resources_in_share(resource_share_arn, resource_owner='SELF')
 
-            for resource in resources:
-                resource_type = resource['type']
-                resource_arn = resource['arn']
+                    for resource in resources:
+                        resource_type = resource['type']
+                        resource_arn = resource['arn']
 
-                if resource_type in NON_SHAREABLE_RESOURCE_TYPES:
-                    writer.writerow([resource_type, resource_arn, 'Yes'])
-                else:
-                    writer.writerow([resource_type, resource_arn, 'No'])
+                        if resource_type in NON_SHAREABLE_RESOURCE_TYPES:
+                            writer.writerow([resource_type, resource_arn, 'Yes'])
+                        else:
+                            writer.writerow([resource_type, resource_arn, 'No'])
 
-        
-        """Check if any resource shares with resource owner as OTHER-ACCOUNTS include resources that are in the NON_SHAREABLE_RESOURCE_TYPES list."""
+                # Check if any resource shares with resource owner as OTHER-ACCOUNTS include resources that are in the NON_SHAREABLE_RESOURCE_TYPES list.
+                for share in resource_shares_other_accounts:
+                    resource_share_arn = share['resourceShareArn']
+                    resources = list_resources_in_share(resource_share_arn, resource_owner='OTHER-ACCOUNTS')
 
-        for share in resource_shares_other_accounts:
-            resource_share_arn = share['resourceShareArn']
-            resources = list_resources_in_share(resource_share_arn, resource_owner='OTHER-ACCOUNTS')
+                    for resource in resources:
+                        resource_type = resource['type']
+                        resource_arn = resource['arn']
 
-            for resource in resources:
-                resource_type = resource['type']
-                resource_arn = resource['arn']
+                        if resource_type in NON_SHAREABLE_RESOURCE_TYPES:
+                            writer.writerow([resource_type, resource_arn, 'Yes'])
+                        else:
+                            writer.writerow([resource_type, resource_arn, 'No'])
+        else:
+            print("No Resource shares active")
 
-                if resource_type in NON_SHAREABLE_RESOURCE_TYPES:
-                    # print(f"WARNING: Resource of type '{resource_type}' (ARN: {resource_arn}) "
-                    #     f"is being shared and can not be shared outside your organization.")
-                    writer.writerow([resource_type, resource_arn, 'Yes'])
-                else:
-                    # print(f"Resource of type '{resource_type}' (ARN: {resource_arn}) is shareable outside organization.")
-                    writer.writerow([resource_type, resource_arn, 'No'])
-        
-
-    
+    except Exception as e:
+        print("Unexpected error in check_for_non_shareable_resources:")
+        print(traceback.format_exc())
 
 if __name__ == "__main__":
-    check_for_non_shareable_resources('testorg')
+    try:
+        check_for_non_shareable_resources('testorg')
+    except Exception as e:
+        print("Error in the main program:")
+        print(traceback.format_exc())

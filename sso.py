@@ -4,6 +4,7 @@ import csv
 from botocore.exceptions import NoCredentialsError, ClientError
 from find_sso_region import find_region_with_sso
 from aws_accounts import get_aws_accounts
+import traceback
 
 def get_user_details_and_export_to_csv(identity_store_client, csv_file, identity_store_id):
     """
@@ -12,15 +13,9 @@ def get_user_details_and_export_to_csv(identity_store_client, csv_file, identity
     :param csv_file: The path of the CSV file to write the user info.
     """
     try:
-        # print(f"Using Identity Center Instance ID: {identity_center_instance_id}")
-
-        # Fetch the user list for the Identity Center instance
-        
-
         users_response = identity_store_client.list_users(
             IdentityStoreId=identity_store_id
         )
-
 
         users = users_response.get('Users', [])
         if not users:
@@ -48,9 +43,11 @@ def get_user_details_and_export_to_csv(identity_store_client, csv_file, identity
     except NoCredentialsError:
         print("AWS credentials not found. Please configure your AWS CLI.")
     except ClientError as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred while fetching user details: {e}")
+        print(traceback.format_exc())
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Unexpected error in get_user_details_and_export_to_csv: {e}")
+        print(traceback.format_exc())
 
 def get_groups_and_export_to_csv(identity_store_client, csv_file, identity_store_id):
     """
@@ -60,7 +57,6 @@ def get_groups_and_export_to_csv(identity_store_client, csv_file, identity_store
     :param identity_store_id: The Identity Store ID.
     """
     try:
-
         groups_response = identity_store_client.list_groups(
             IdentityStoreId=identity_store_id
         )
@@ -89,9 +85,11 @@ def get_groups_and_export_to_csv(identity_store_client, csv_file, identity_store
     except NoCredentialsError:
         print("AWS credentials not found. Please configure your AWS CLI.")
     except ClientError as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred while fetching group details: {e}")
+        print(traceback.format_exc())
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Unexpected error in get_groups_and_export_to_csv: {e}")
+        print(traceback.format_exc())
 
 def get_permission_sets_and_export_to_csv(sso_client, csv_file, instance_arn):
     """
@@ -101,7 +99,6 @@ def get_permission_sets_and_export_to_csv(sso_client, csv_file, instance_arn):
     :param instance_arn: The Identity Center Instance ARN.
     """
     try:
-
         permission_sets_response = sso_client.list_permission_sets(
             InstanceArn=instance_arn
         )
@@ -126,9 +123,11 @@ def get_permission_sets_and_export_to_csv(sso_client, csv_file, instance_arn):
     except NoCredentialsError:
         print("AWS credentials not found. Please configure your AWS CLI.")
     except ClientError as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred while fetching permission sets: {e}")
+        print(traceback.format_exc())
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Unexpected error in get_permission_sets_and_export_to_csv: {e}")
+        print(traceback.format_exc())
 
 def get_sso_applications_and_export_to_csv(sso_client, csv_file, instance_arn):
     """
@@ -138,7 +137,6 @@ def get_sso_applications_and_export_to_csv(sso_client, csv_file, instance_arn):
     :param instance_arn: The Identity Center Instance ARN.
     """
     try:
-
         applications_response = sso_client.list_applications(
             InstanceArn=instance_arn
         )
@@ -168,67 +166,82 @@ def get_sso_applications_and_export_to_csv(sso_client, csv_file, instance_arn):
     except NoCredentialsError:
         print("AWS credentials not found. Please configure your AWS CLI.")
     except ClientError as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred while fetching SSO applications: {e}")
+        print(traceback.format_exc())
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Unexpected error in get_sso_applications_and_export_to_csv: {e}")
+        print(traceback.format_exc())
 
 def get_account_permission_sets_and_export_to_csv(sso_client, csv_file, instance_arn):
+    """
+    Fetches permission sets attached to AWS accounts and exports them to a CSV file.
     
-    # Getting all aws accounts
-    accounts=get_aws_accounts(boto3.client('organizations'))
+    :param csv_file: The path of the CSV file to write the permission set info.
+    :param instance_arn: The Identity Center Instance ARN.
+    """
+    try:
+        # Getting all aws accounts
+        accounts = get_aws_accounts(boto3.client('organizations'))
 
-    # Initialize number of applications required post transition to 0
-    number_of_applications_required=0 
+        # Initialize number of applications required post transition to 0
+        number_of_applications_required = 0 
 
-    # Prepare the CSV file for writing
-    with open(csv_file, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.writer(file)
-        # Write the header row
-        writer.writerow(['AccountId', 'PermissionSetCount'])
+        # Prepare the CSV file for writing
+        with open(csv_file, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            # Write the header row
+            writer.writerow(['AccountId', 'PermissionSetCount'])
 
-        for account in accounts:
+            for account in accounts:
+                acc_id = account['Id']
+                permission_set_response = sso_client.list_permission_sets_provisioned_to_account(
+                    AccountId=acc_id,
+                    InstanceArn=instance_arn    
+                )
+                permission_set_count = len(permission_set_response['PermissionSets'])
+                
+                # Incrementing number of applications required as per the found permission sets
+                number_of_applications_required += permission_set_count
+
+                writer.writerow([acc_id, permission_set_count])
             
-            acc_id=account['Id']
-            permission_set_response = sso_client.list_permission_sets_provisioned_to_account(
-                AccountId=account['Id'],
-                InstanceArn=instance_arn    
-            )
-            permission_set_count=len(permission_set_response['PermissionSets'])
+            # Appending final number of applications required
+            writer.writerow(['Total applications required', number_of_applications_required])
             
-            # Incrementing number of applications required as per the found permission sets
-            number_of_applications_required+=permission_set_count
+            print(f"Permission set attachment info exported successfully to CSV.")
 
-            writer.writerow([acc_id, permission_set_count])
+    except NoCredentialsError:
+        print("AWS credentials not found. Please configure your AWS CLI.")
+    except ClientError as e:
+        print(f"An error occurred while fetching account permission sets: {e}")
+        print(traceback.format_exc())
+    except Exception as e:
+        print(f"Unexpected error in get_account_permission_sets_and_export_to_csv: {e}")
+        print(traceback.format_exc())
+
+if __name__ == '__main__': 
+    try:
+        # Initialize the boto3 client for AWS Identity Center
+        sso_client = boto3.client('sso-admin')
+        response = sso_client.list_instances()
+        if response['Instances']:
+            print('SSO enabled in current region, skipping region checks!')
+            sso_region = boto3.Session().region_name
+        else:
+            # Checking other regions 
+            sso_region = find_region_with_sso()
         
-        #  Appending final number of applications required
-        writer.writerow(['Total applications required', number_of_applications_required])
-        
-        print(f"Permission set attachment info exported successfully to CSV.")
+        print(sso_region)
 
-
-if __name__ == '__main__': # Use this function for directly running this file
-    # Initialize the boto3 client for AWS Identity Center
-    # Checking if sso is enabled in current region
-    sso_client = boto3.client('sso-admin')
-    response = sso_client.list_instances()
-    if response['Instances']:
-        print('SSO enabled in current region, skipping region checks!')
-        ssoRegion=boto3.Session().region_name
-    else:
-        # Checking other regions 
-        ssoRegion=find_region_with_sso()
-    print(ssoRegion)
-
-    if ssoRegion:
+        if sso_region:
             # Create required clients
-            sso_client = boto3.client('sso-admin', region_name=ssoRegion)
-            identity_store_client = boto3.client('identitystore', ssoRegion)
+            sso_client = boto3.client('sso-admin', region_name=sso_region)
+            identity_store_client = boto3.client('identitystore', sso_region)
             
             # Fetch Identity Center Instance and Identity Store ID
             instances_response = sso_client.list_instances()
             identity_center_instance_id = instances_response['Instances'][0]['InstanceArn']
             identity_store_id = instances_response['Instances'][0]['IdentityStoreId']
-            
             
             # Specify the paths to your CSV files
             # user_csv_file = 'identity_center_users.csv'
@@ -236,7 +249,7 @@ if __name__ == '__main__': # Use this function for directly running this file
             # permission_set_csv_file = 'identity_center_permission_sets.csv'
             # sso_applications_csv_file = 'identity_center_sso_applications.csv'
             # account_permission_set_count_csv_file = 'identity_center_permission_sets_attached_to_account.csv'
-            # get_account_permission_sets_and_export_to_csv(account_permission_set_count_csv_file,identity_center_instance_id)
+            # get_account_permission_sets_and_export_to_csv(account_permission_set_count_csv_file, identity_center_instance_id)
             # # Export users
             # get_user_details_and_export_to_csv(identity_store_client, user_csv_file, identity_store_id)
 
@@ -244,69 +257,77 @@ if __name__ == '__main__': # Use this function for directly running this file
             # get_groups_and_export_to_csv(identity_store_client, group_csv_file, identity_store_id)
 
             # # Export permission sets
-            # get_permission_sets_and_export_to_csv(ssoClient, permission_set_csv_file, identity_center_instance_id)
+            # get_permission_sets_and_export_to_csv(sso_client, permission_set_csv_file, identity_center_instance_id)
 
             # # Export SSO applications
-            # get_sso_applications_and_export_to_csv(ssoClient, sso_applications_csv_file, identity_center_instance_id)
-    else:
-        print("SSO not enabled")
+            # get_sso_applications_and_export_to_csv(sso_client, sso_applications_csv_file, identity_center_instance_id)
+        else:
+            print("SSO not enabled")
+    
+    except Exception as e:
+        print(f"Unexpected error in main: {e}")
+        print(traceback.format_exc())
 
 def get_sso_info(outputDirectory):
+    """
+    Retrieves SSO information and exports it to CSV files in the specified directory.
+    
+    :param outputDirectory: The directory where the CSV files will be saved.
+    """
+    try:
+        # Creating directories if they don't exist
+        if not os.path.exists(outputDirectory):
+            os.makedirs(outputDirectory)
 
-    # Creating directories if they don't exist
-    if not os.path.exists(outputDirectory):
-        os.makedirs(outputDirectory)
+        # Checking if sso is enabled in current region
+        sso_client = boto3.client('sso-admin')
+        response = sso_client.list_instances()
+        if response['Instances']:
+            sso_region = boto3.Session().region_name
+            print(f'SSO enabled in current region: {sso_region}, skipping region checks!')
+        else:
+            # Checking other regions 
+            sso_region = find_region_with_sso()
+            print(f'SSO enabled in region: {sso_region}')
 
-    # Checking if sso is enabled in current region
-    sso_client = boto3.client('sso-admin')
-    response = sso_client.list_instances()
-    if response['Instances']:
-        sso_region=boto3.Session().region_name
-        print(f'SSO enabled in current region : {sso_region}, skipping region checks!')
-    else:
-        # Checking other regions 
-        sso_region=find_region_with_sso()
-        print(f'SSO enabled in region : {sso_region}')
-    # print(ssoRegion)
+        if sso_region:
+            try:
+                # Create required clients
+                sso_client = boto3.client('sso-admin', region_name=sso_region)
+                identity_store_client = boto3.client('identitystore', sso_region)
+                
+                # Fetch Identity Center Instance and Identity Store ID
+                instances_response = sso_client.list_instances()
+                identity_center_instance_arn = instances_response['Instances'][0]['InstanceArn']
+                identity_store_id = instances_response['Instances'][0]['IdentityStoreId']
+                
+                # Specify the paths to your CSV files
+                user_csv_file = f'{outputDirectory}/identity_center_users.csv'
+                group_csv_file = f'{outputDirectory}/identity_center_groups.csv'
+                permission_set_csv_file = f'{outputDirectory}/identity_center_permission_sets.csv'
+                sso_applications_csv_file = f'{outputDirectory}/identity_center_sso_applications.csv'
+                account_permission_set_count_csv_file = f'{outputDirectory}/identity_center_permission_sets_attached_to_account.csv'
+                
+                # Export users
+                get_user_details_and_export_to_csv(identity_store_client, user_csv_file, identity_store_id)
 
-    if sso_region:
-        try:
-            # Create required clients
-            sso_client = boto3.client('sso-admin', region_name=sso_region)
-            identity_store_client = boto3.client('identitystore', sso_region)
-            
-            # Fetch Identity Center Instance and Identity Store ID
-            instances_response = sso_client.list_instances()
-            identity_center_instance_arn = instances_response['Instances'][0]['InstanceArn']
-            identity_store_id = instances_response['Instances'][0]['IdentityStoreId']
-            
+                # Export groups
+                get_groups_and_export_to_csv(identity_store_client, group_csv_file, identity_store_id)
 
-            # Specify the paths to your CSV files
-            user_csv_file = f'{outputDirectory}/identity_center_users.csv'
-            group_csv_file = f'{outputDirectory}/identity_center_groups.csv'
-            permission_set_csv_file = f'{outputDirectory}/identity_center_permission_sets.csv'
-            sso_applications_csv_file = f'{outputDirectory}/identity_center_sso_applications.csv'
-            account_permission_set_count_csv_file = f'{outputDirectory}/identity_center_permission_sets_attached_to_account.csv'
-            
+                # Export permission sets
+                get_permission_sets_and_export_to_csv(sso_client, permission_set_csv_file, identity_center_instance_arn)
 
-            # Export users
-            get_user_details_and_export_to_csv(identity_store_client, user_csv_file, identity_store_id)
+                # Export SSO applications
+                get_sso_applications_and_export_to_csv(sso_client, sso_applications_csv_file, identity_center_instance_arn)
 
-            # Export groups
-            get_groups_and_export_to_csv(identity_store_client, group_csv_file, identity_store_id)
+                # Export permission sets attached to accounts
+                get_account_permission_sets_and_export_to_csv(sso_client, account_permission_set_count_csv_file, identity_center_instance_arn)
 
-            # Export permission sets
-            get_permission_sets_and_export_to_csv(sso_client, permission_set_csv_file, identity_center_instance_arn)
-
-            # Export SSO applications
-            get_sso_applications_and_export_to_csv(sso_client, sso_applications_csv_file, identity_center_instance_arn)
-
-            # Export permission sets attached to accounts
-            get_account_permission_sets_and_export_to_csv(sso_client, account_permission_set_count_csv_file,identity_center_instance_arn)
-
-            # Check if any org dependent resources are shared using RAM
-            
-        except Exception as e:
-            print(f"Failed to retrieve Identity Center instances: {e}")
-    else:
-        print("SSO not enabled")
+            except Exception as e:
+                print(f"Failed to retrieve Identity Center instances: {e}")
+                print(traceback.format_exc())
+        else:
+            print("SSO not enabled")
+    except Exception as e:
+        print(f"Unexpected error in get_sso_info: {e}")
+        print(traceback.format_exc())
