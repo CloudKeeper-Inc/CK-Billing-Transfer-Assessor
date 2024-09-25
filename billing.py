@@ -148,7 +148,7 @@ def get_billing_info(output_directory):
             # Step 5: Parse the data and add to the final result list
             account_billing_data = parse_cost_data(cost_data, account_id, account_name)
             if account_billing_data is not None:
-                export_to_csv(account_billing_data, filename=f'{output_directory}/{account_id}_bill.csv')
+                export_to_csv(account_billing_data, filename=f'{output_directory}/{account_name}_{account_id}_bill.csv')
 
     except Exception as e:
         print(f"Unexpected error in get_billing_info: {e}")
